@@ -1,0 +1,471 @@
+---
+author: "Muhammad Omar Al-Zadid"
+date: "2024-11-29"
+output: pdf_document
+latex_engine: xelatex
+fontsize: 12pt
+---
+
+\begin{center}
+\vspace{1em}
+\textbf{\large Estimation of Transition Dynamics in Manufacturing and Delivery Using MCMC}
+\end{center}
+
+\vspace{1em}
+\begingroup
+\large
+\textbf{Introduction}
+\endgroup
+
+Manufacturing companies around the world primarily perform two main operations, manufacturing the product using factory manpower and machinery, and delivering the product to the subsequent division to perform post-production activities such as quality check, packaging, storing, loading etc, or delivering directly to the customer (probably a retailer, or another manufacturer, or in rare cases a consumer). In each of these cases, the efficiency to perform these sequential activities are highly important to ensure timely production and delivery of the product. Because the distance between the point  of storing the raw materials in the warehouse, or factory and the point of discharging the finished product from the warehouse or factory to the next stage can effectively reduce costs, an efficient inventory management of a firm depends on the time management of the production runs and delivery operations. 
+
+However, the division between the immediate finishing of a product out of a machine and discharging it to the subsequent stages is often impractical to record due to high volume production, custom manufacturing, make-to-order manufacturing, Just-In-Time (JIT) delivery practices by numerous firms in the world. The general practice is recording the overall time in two stages without a clear division between them. These time data often have a pattern when collected. Due to the repeating production runs and delivery operations, the time to finish and deliver a product is often reduced exponentially due to using the same resources and systems for repetitive functions. In order to ensure an efficient manufacturing and delivery system, it is crucial to know how the time is being reduced over the cycles for each of these two stages. While the first stage time is often Gamma distributed, the second stage is exponentially distributed. So, the data collected for the production run and delivery of a product in a factory is often a mixture of two distributions. It is also highly important to address the point of transition at which the data distribution is changed from a Gamma to an Exponential. For this course project, we use the methods we learned in this course to recover the unknown parameters of the assumed densities and the unknown point of transition and try to compare between the efficiency (runtime), and accuracy of each used method. 
+
+\vspace{1em}
+\begingroup
+\large
+\textbf{Methodology}
+\endgroup
+
+Let us consider a manufacturing company employs a make-to-order production and JIT delivery. This R&D section of the firm is supposed to collect data of the time of production and delivery in order to improve its production and delivery efficiency by identifying the true parameters of the densities of the data and how and where they change. The collected data would be a supply chain data set of total time to manufacture and deliver an order which consists of:  
+
+\textbf{Time spent for the procurement or manufacturing (in hours):} This time includes the variability in manufacturing or production processes, where delays or batch productions lead to times that are Gamma-distributed.  
+
+\textbf{Time spent for delivery (in hours):} This time represents the time taken to fulfill the order or deliver the item to the customer or next stage once the production process is complete. This time is often exponentially distributed.  
+
+We assume that at transition point k, the procurement or manufacturing ends and the delivery process begins. 
+
+When the total time data is collected/observed, we are not supposed to directly know which portion of the data is Gamma-distributed and which portion is exponentially distributed. We do not either know the transition point $k$ at which the nature of the data changes from Gamma to exponential distribution. 
+
+So, we can consider this dataset as a mixture of two distributions, namely, Gamma $(\alpha, \beta)$ and Exponential $(\lambda)$ with a transition point $k$. We are required to estimate $k, \alpha, \beta,$ and $\lambda.$ Here, this has to be noted that in fact the time data is originally Gamma distributed as Exponential is simply a special case of Gamma distribution. Therefore, this can also be considered as a mixture of two Gamma distributions. However, we treat the latter as an exponential distribution and call its parameter $\lambda$, as widely used in practice. 
+
+We use the following two methods to estimate the above-mentioned parameters:  
+
+\begin{enumerate}
+\item Single Component MH: We use this Metropolis-Hastings algorithm to generate a Markov chain of each unknown component of a given distribution separately component-wise using MCMC sampling and then obtain the mean of each chain to estimate the unknown parameters. Throughout the project, we sometimes term it as "SCMH".
+
+\item Independent MH: We use this method by sampling from the proposal distributions independently of the current state of the Markov chain and update the parameters vector-wise. Then we obtain the mean of each chain to estimate the unknown parameters. Throughout the project, we sometimes term it as "INDMH".
+\end{enumerate}  
+
+After estimating the parameters, we draw a comparison between the two methods used, in terms of their accuracy (how close the estimates would be) and efficiency (how fast the algorithms would work). We perform all analyses using R programming language. The respective R codes are attached in the analyses section.
+
+\vspace{1em}
+\begingroup
+\large
+\textbf{Data}
+\endgroup  
+
+We find out that the real-world data are nearly unavailable in this kind of area. Almost all the research done in this subject are analytical in nature and were rarely done in an empirical setting with real-world data. Furthermore, collecting data for this experiment will require contacting real-world companies which might take a considerable amount of time and resources which might be infeasible for our scenario. Hence, we generate synthetic data for this experiment using R programming language. 650 Gamma realizations are generated using transformation method and 350 exponential realizations are generated by inverse method. Then they are joined together and considered as 1000 data points, which is a mixture of two distributions with un unknown point k.  
+
+```{r}
+# generating synthetic data
+set.seed(123)
+
+n=1000
+k=650
+
+# Gamma realizations by Transformation Method
+# alpha-----> positive integer
+# beta------> positive number
+
+alpha=2
+beta=0.1
+Gam=c()
+for(i in 1:k){
+  u1=runif(alpha)
+  Gam[i]=(1/beta)*sum(-log(u1))
+}
+hist(Gam)
+
+# Exponential realizations by Inverse method
+lam=0.5
+u2=runif(n-k)
+Exp=-(1/lam)*log(1-u2)
+hist(Exp)
+
+# Joining the two sets of synthetic data
+
+x=c(Gam,Exp)
+
+x=(x-min(x))/(max(x)-min(x))  #normalizing or scaling the data
+
+hist(x,breaks=30)
+```
+
+\vspace{1em}
+\begingroup
+\large
+\textbf{Analyses}
+\endgroup 
+
+\textbf{Single Component MH:}  
+
+All the calculations and derivations related to single component MH are given below:
+
+(1) Prior and log-prior distributions:
+\begin{eqnarray*}
+\pi(\alpha) &\sim& \text{Gamma}(a_1,b_1) \\ 
+\log\pi(\alpha) &=& a_1\log(b_1) - \log(\Gamma(a_1)) + (a_1-1)\log(\alpha) - b_1\alpha\\
+\pi(\beta) &\sim& \text{Gamma}(a_2,b_2)  \\
+\log\pi(\beta) &=& a_2\log(b_2) - \log(\Gamma(a_2)) + (a_2-1)\log(\beta) - b_2\beta\\
+\pi(\lambda) &\sim& \text{Exp}(\lambda_1)  \\
+\log\pi(\lambda) &=& \log(\lambda_1)-\lambda_1.\lambda\\
+\pi(k) &\sim& \text{Discrete Unif}(1,n-1)\\
+\log\pi(k) &=& -\log(n-1)
+\end{eqnarray*}
+
+(2) Likelihood function:  
+\begin{eqnarray*}
+L(\alpha,\beta,\lambda,k)&=&\prod_{i=1}^n \left(\frac{1}{k}f_{gamma}(x_i|\alpha,\beta)+\frac{n-k}{n}f_{exp}(x_i|\lambda)\right)  \\  
+&\text{where }& f_{gamma}(x_i|\alpha,\beta) = \frac{\beta^{\alpha}x_i^{\alpha-1}e^{-\beta x_i}}{\Gamma(\alpha)}, \qquad   i=1,...k\\
+&\text{and}& f_{exp}(x_i|\lambda) = \lambda e^{-\lambda x_i}, \qquad   i=k+1,...n\\
+\end{eqnarray*}
+
+So, log-likelihood,
+\begin{eqnarray*}
+\log L(\alpha,\beta,\lambda,k)=\sum_{i=1}^n \log \left(\frac{1}{k}f_{gamma}(x_i|\alpha,\beta)+\frac{n-k}{n}f_{exp}(x_i|\lambda)\right)
+\end{eqnarray*}
+
+(3) Proposal distribution:
+\begin{eqnarray*}
+\alpha\sim q(\alpha_{new}|\alpha_{current}) = N(\alpha_{current},\sigma_{\alpha}^2)  \\
+\beta\sim q(\beta_{new}|\beta_{current}) = N(\beta_{current},\sigma_{\beta}^2)\\
+\lambda\sim q(\lambda_{new}|\lambda_{current}) = N(\lambda_{current},\sigma_{\lambda}^2)  \\
+k\sim q(k_{new}|k_{current}) = \text{Dis.Unif}(1,n) 
+\end{eqnarray*}
+
+(4) Posterior distributions:  
+\begin{eqnarray*}
+\pi(\alpha,\beta,\lambda,k|x_i) &\propto& L(\alpha,\beta,\lambda,k).\pi(\alpha) .\pi(\beta).\pi(\lambda).\pi(k)\\
+\log\pi(\alpha,\beta,\lambda,k|x_i) &\propto& \log L(\alpha,\beta,\lambda,k)+ \log \pi(\alpha) +\log \pi(\beta)+ \log\pi(\lambda)+ \log\pi(k)
+\end{eqnarray*}  
+
+(5) Acceptance probability:  
+
+The proposal distributions $q$(new|current) for $\alpha,\beta, \lambda$ are all chosen as symmetric distributions. So, they are canceled out in the calculation of acceptance probability $\rho$. The density for $k$ is $\frac{1}{n-1}$ which is a constant. So, it is also canceled out. Moreover, the prior of $k$ is $\frac{1}{n-2}$ which is a constant as well. So, it is also canceled out in the calcualtion of acceptance probability. 
+
+\begin{eqnarray*}
+\rho &=& \min\left({\frac{\text{posterior(new)}}{\text{posterior(current)}},1}\right)\\
+&=& \min\left({\frac{\pi(\alpha,\beta,\lambda,k|x_i)_{new}}{\pi(\alpha,\beta,\lambda,k|x_i)_{current}},1}\right)\\
+&=& \min\big[{\exp(\log\pi(\alpha,\beta,\lambda,k|x_i)_{new}-\log\pi(\alpha,\beta,\lambda,k|x_i)_{current}),1}\big]
+\end{eqnarray*}  
+
+Using the acceptance probability, we sample each component from the proposal density and create a Markov chain for each component. After generating the Markov chain we calculate the mean of each component and thus estimate the component in our data set.  
+
+Following is the respective R codes to perform the above implementation:  
+
+```{r}
+SCMH=function(nsim){
+
+start=Sys.time()
+# initial parameters of alpha,beta,lam priors
+a=3 ; b=1
+a1=a; a2=a
+b1=b; b2=b
+lam1=1
+
+# current values of the parameters
+alpha_cur = 2
+beta_cur=1
+lam_cur=0.5
+k_cur=floor(n/2)
+
+alpha_chain=numeric(nsim)
+beta_chain=numeric(nsim)
+lam_chain=numeric(nsim)
+k_chain=numeric(nsim)
+
+#log-posterior calculation
+log_posterior=function(alpha,beta,lam,k){
+  if(alpha<=0 || beta<=0 || lam<=0 || k<=0 || k>=n){
+    return(-Inf)
+  } #return negative inf in order to prevent invalid values
+  
+  log_prior_alpha= a1*log(b1) - log(gamma(a1)) + (a1-1)*log(alpha) - b1*alpha
+  log_prior_beta= a2*log(b2) - log(gamma(a2)) + (a2-1)*log(beta) - b2*beta
+  log_prior_lam= log(lam1) - (lam1*lam)
+  log_prior_k= -log(n-1) #this quantity will not used in rho calculation
+  
+  #likelihood calculations
+  x_gamma=x[1:k]    #first k points (Gamma)
+  x_exp=x[(k+1):n]  #remaining n-k points (Exp)
+  
+  f_gamma=(beta^alpha)*(x_gamma^(alpha-1))*exp(-beta*x_gamma)/gamma(alpha)
+  f_exp = lam*exp(-lam*x_exp)
+  
+  log_L=sum(log(f_gamma*k/n)) + sum(log(f_exp*(n-k)/n))
+  
+  log_posterior=log_L+log_prior_alpha+log_prior_beta+log_prior_lam + log_prior_k
+  
+  return(log_posterior)
+}
+
+#Single component MH update
+
+for(j in 1:nsim){
+  k_new=sample(1:(n-1),1)
+  alpha_new=abs(rnorm(1,mean=alpha_cur,sd=0.5))
+  beta_new=abs(rnorm(1,mean=beta_cur,sd=0.5))
+  lam_new=abs(rnorm(1,mean=lam_cur,sd=0.5))
+  
+  log_rho=log_posterior(alpha_new,beta_new,lam_new,k_new)-log_posterior(alpha_cur,beta_cur,lam_cur,k_cur)
+  
+  if(is.nan(log_rho)|is.na(log_rho)){next}
+  
+  #accept or reject the new value for each component
+  rho=min(exp(log_rho),1)
+  
+  u=runif(1)
+  if(u<rho){
+    alpha_cur=alpha_new
+    beta_cur=beta_new
+    lam_cur=lam_new
+    k_cur=k_new
+  }
+  
+  alpha_chain[j]=alpha_cur
+  beta_chain[j]=beta_cur
+  lam_chain[j]=lam_cur
+  k_chain[j]=k_cur
+  
+}
+
+#estimating mean of each component
+alpha_mean=mean(alpha_chain)
+beta_mean=mean(beta_chain)
+lam_mean=mean(lam_chain)
+k_mean=mean(k_chain)
+
+end=Sys.time()
+runtime=end-start
+
+return(list("mean of alpha"=alpha_mean,"mean of beta"=beta_mean,"mean of lam"=lam_mean,"mean of k"=k_mean,"runtime"=runtime))
+}
+
+SCMH(500)
+SCMH(1000)
+SCMH(5000)
+SCMH(10000)
+
+```
+
+\vspace{1em}
+\textbf{Independent MH:}  
+
+All the calculations and derivations related to Independent MH are given below: 
+
+(1) Log-likelihood function:  
+
+Log-likelihood of Gamma portion:
+\begin{eqnarray*}
+L_{gamma}(X_i)&=&\prod_{i=1}^n\frac{\beta^{\alpha}X_i^{\alpha-1}e^{-\beta X_i}}{\Gamma(\alpha)},\qquad i=1,...k\\
+\log L_{gamma}(X_i)&=&\sum_{i=1}^n\left(\alpha\log(\beta)+(\alpha-1)\log(X_i)-\beta X_i- \log(\Gamma(\alpha))\right)
+\end{eqnarray*}
+
+Log-likelihood of Exponential portion:
+\begin{eqnarray*}
+L_{exp}(X_i)&=&\prod_{i=1}^n\lambda e^{-\lambda X_i},\qquad i=k+1,...n\\
+\log L_{exp}(X_i)&=&\sum_{i=1}^n\left(\log(\lambda)-\lambda X_i\right)
+\end{eqnarray*}
+
+So, total log-likelihood of the parameters,
+\begin{eqnarray*}
+\log L(x,\alpha,\beta,\lambda,k)= \log L_{gamma}(X_i)+ \log L_{exp}(X_i)
+\end{eqnarray*}
+
+(2) Log-prior calculation:  
+
+We assume Gamma as prior for $\alpha,\beta,\lambda$ and Discrete Uniform for $k$:  
+\begin{eqnarray*}
+\pi(\alpha) &\sim& \text{Gamma}(a_1,b_1) \\ 
+\log\pi(\alpha) &=& a_1\log(b_1) - \log(\Gamma(a_1)) + (a_1-1)\log(\alpha) - b_1\alpha\\
+\pi(\beta) &\sim& \text{Gamma}(a_2,b_2)  \\
+\log\pi(\beta) &=& a_2\log(b_2) - \log(\Gamma(a_2)) + (a_2-1)\log(\beta) - b_2\beta\\
+\pi(\lambda) &\sim& \text{Gamma}(a_3,b_3)  \\
+\log\pi(\lambda) &=& a_3\log(b_3) - \log(\Gamma(a_3)) + (a_3-1)\log(\lambda) - b_3\lambda\\
+\pi(k) &\sim& \text{Discrete Unif}(1,n)\\
+\log\pi(k) &=& -\log(n-1)
+\end{eqnarray*}
+
+So, total log-prior of the parameters,
+\begin{eqnarray*}
+\log\pi(\alpha,\beta,\lambda,k)= \log\pi(\alpha)+\log\pi(\beta)+\log\pi(\lambda)+\log\pi(k)
+\end{eqnarray*}
+
+(3) Proposal Densities:  
+\begin{eqnarray*}
+\text{Proposal for } \alpha &\sim& \text{Gamma}(1,1)\\
+\text{Proposal for } \beta &\sim& \text{Gamma}(1,1)\\
+\text{Proposal for } \lambda &\sim& \text{Gamma}(1,1)\\
+\text{Proposal for } k &\sim& \text{Discrete Unif}(1,n)\\
+\end{eqnarray*}
+
+(4) Calculation of acceptance probability $(\rho)$:  
+
+\begin{eqnarray*}
+\rho=\min\left( \frac{L(x,\alpha_{proposal},\beta_{proposal},\lambda_{proposal},k_{proposal})}{L(x,\alpha,\beta,\lambda,k)}.\frac{\pi(\alpha,\beta,\lambda,k)}{\pi(\alpha_{proposal},\beta_{proposal},\lambda_{proposal},k_{proposal})},1 \right)\\
+\end{eqnarray*}
+
+(5) Independent MH algorithm: 
+
+\begin{enumerate}
+\item Generate $\alpha,\beta,\lambda,k$ from proposal distributions, $\quad$ generate $u\sim \text{Unif}(0,1)$.
+
+\item if $u<\exp(\log(\rho))$, accept $\alpha=\alpha_{proposal},\beta=\beta_{proposal},\lambda=\lambda_{proposal},k=k_{proposal}$.
+
+\item Otherwise current values are kept.
+\end{enumerate}
+
+Thus, values of $\alpha,\beta,\lambda,k$ are stored in output and the mean is calculated for each parameter.  
+
+Following is the respective R codes to perform the above implementation:  
+
+```{r}
+INDMH=function(nsim){
+
+start=Sys.time()
+# initializing parameters of alpha,beta,lam
+a=3 ; b=1
+a1=a; a2=a; a3=a
+b1=b; b2=b; b3=b
+
+# log-likelihood calculation
+log_L=function(x,alpha,beta,lam,k){
+  if(alpha<=0 || beta<=0 || lam<=0 || k<=0 || k>=n){
+    return(-Inf)} #return negative inf in order to prevent invalid values
+  gamma_L=sum((alpha-1)*log(x[1:k])- x[1:k]*beta -log(gamma(alpha))+ alpha*log(beta))
+  exp_L=sum(log(lam) - lam*x[(k+1):n])
+  return(gamma_L+exp_L)
+}
+
+# log-prior calculation
+log_prior=function(alpha,beta,lam,k){
+  log_prior_alpha=(a1-1)*log(alpha) - alpha*b1 - log(gamma(a1)) + a1*log(b1)
+  log_prior_beta=(a2-1)*log(beta) - beta*b2 - log(gamma(a2)) + a2*log(b2)
+  log_prior_lam=(a3-1)*log(lam) - lam*b3 - log(gamma(a3)) + a3*log(b3)
+  log_prior_k=log(1/n)
+  return(log_prior_alpha+ log_prior_beta + log_prior_lam + log_prior_k)
+}
+
+# custom gamma proposal generation function
+generate_gamma=function(alpha,beta){
+  u=runif(alpha)
+  return((1/beta)*sum(-log(u)))
+}
+
+# parameters for independent MH algorithm
+alpha=1; beta=1; lam=1; k=n/2
+
+# store output
+output=matrix(NA,nsim,4)
+
+for(i in 1:nsim){
+  # generate from proposal distributions
+  alpha_proposal=generate_gamma(1,1)
+  beta_proposal=generate_gamma(1,1)
+  lam_proposal=generate_gamma(1,1)
+  k_proposal=sample(1:n,1)
+  
+  # compute log(rho)
+  log_rho=log_L(x,alpha_proposal,beta_proposal,lam_proposal,k_proposal) 
+          + log_prior(alpha_proposal,beta_proposal,lam_proposal,k_proposal) 
+          - log_L(x,alpha,beta,lam,k) - log_prior(alpha,beta,lam,k)
+  
+  if(!is.na(log_rho) && log(runif(1)) < log_rho){
+    alpha=alpha_proposal
+    beta=beta_proposal
+    lam=lam_proposal
+    k=k_proposal
+  }
+  output[i,]=c(alpha,beta,lam,k)
+}
+
+alpha_mean=mean(alpha)
+beta_mean=mean(beta)
+lam_mean=mean(lam)
+k_mean=mean(k)
+
+end=Sys.time()
+runtime=end-start
+
+return(list("mean of alpha"=alpha_mean,"mean of beta"=beta_mean,"mean of lam"=lam_mean,"mean of k"=k_mean,"runtime"=runtime))
+}
+
+INDMH(500)
+INDMH(1000)
+INDMH(5000)
+INDMH(10000)
+
+```
+
+The goal of our analysis was to draw a simple comparison between the two methods in terms of their accuracy and time-efficiency. To measure the accuracy of each method, we compute relative error for different numbers of iterations performed for each parameter.
+
+\begin{eqnarray*}
+\text{Relative Error}= \left\lvert\frac{\text{Estimated value - True Value}}{\text{True Value}}\right\rvert*100\%
+\end{eqnarray*}
+
+To measure time-efficiency, we simply compare the run-time for each method's code.
+
+\vspace{1em}
+
+\begingroup
+\large
+\textbf{Findings}
+\endgroup  
+
+After computing relative error for each parameter and for different number of iterations, we observe that there was no noticeable increasing or decreasing pattern for different iterations. In estimating $k$, Single component MH always performed better than independent MH. The lowest relative error to estimate $k$ was only 1.53% for SCMH whereas the lowest error to estimate $k$ for Independent MH was 11.54%. To estimate other parameters, one method worked better than the other for different numbers of iterations. Overall, both methods estimated $k$ and $\alpha$ better respectively. In terms of run-time, independent MH was always much faster than Single component MH. However, in terms of accuracy, single component MH was a little better than independent MH. 
+
+```{r table-output, echo=FALSE}
+# True values
+true_alpha <- 2
+true_beta <- 0.1
+true_lambda <- 0.5
+true_k <- 650
+
+# Data: SCMH and INDMH results
+results <- data.frame(
+  Method = c("SCMH", "INDMH", "SCMH", "INDMH", "SCMH", "INDMH", "SCMH", "INDMH"),
+  Iterations = c(500, 500, 1000, 1000, 5000, 5000, 10000, 10000),
+  Alpha = c(0.8361905, 0.5049638, 0.2573558, 0.2078914, 0.1357002, 1.717153, 0.716214, 0.1613593),
+  Beta = c(0.8683006, 0.9283596, 1.594198, 0.7464388, 0.7058617, 1.152869, 1.02531, 0.799877),
+  Lambda = c(0.8359284, 0.4304201, 1.23521, 2.090191, 0.8530741, 2.892499, 1.398508, 0.02134403),
+  K = c(785.688, 916, 640.073, 394, 674.5192, 22, 633.9616, 725),
+  Runtime = c(0.2039139, 0.05020595, 0.3548911, 0.08906603, 1.764668, 0.412102, 3.33606, 0.8283839)
+)
+
+# Calculate relative errors
+results$RE_Alpha <- abs(results$Alpha - true_alpha) / true_alpha * 100
+results$RE_Beta <- abs(results$Beta - true_beta) / true_beta * 100
+results$RE_Lambda <- abs(results$Lambda - true_lambda) / true_lambda * 100
+results$RE_K <- abs(results$K - true_k) / true_k * 100
+
+# Select and format columns for the table
+table_data <- results[, c("Method", "Iterations", "RE_Alpha", "RE_Beta", "RE_Lambda", "RE_K", "Runtime")]
+
+# Output the table using kable to render it as a markdown table
+knitr::kable(table_data, format = "markdown", digits = 2, 
+             col.names = c("Method", "Iterations", "RE_Alpha (%)", "RE_Beta (%)", "RE_Lambda (%)", "RE_K (%)", "Runtime (s)"),
+             caption = "Relative Error and Runtime for Single Component MH and Independent MH Methods")
+
+
+```
+\vspace{-1em}
+
+\vspace{1em}
+
+\begingroup
+\large
+\textbf{Conclusion}
+\endgroup 
+
+In order to maintain a streamlined production system, it is important to know the time taken for production and delivery. Selecting the best method to estimate those time lengths is an important step in the process. Not only the method should be accurate but also it needs to be time-efficient to render the findings right across to the management in real time. In our study, we tested two different Metropolis-Hastings algorithms with the help of Bayesian concepts. The overall finding indicates that while one method estimates more accurately, another takes less time. Our study might have several limitations that one can overcome with more careful design of the algorithms to achieve accuracy and efficiency. Furthermore, we deal with a synthetic data set. One can use real-world data for better estimation and avoidance of invalid values on occasions. 
+
+\vspace{6em}
+\begin{center}
+\textbf{\large END}
+\end{center}
+
+
+
+
+
